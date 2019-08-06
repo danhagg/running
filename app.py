@@ -1,37 +1,41 @@
+import json
+import datetime
+from textwrap import dedent as d
 import dash
+import dash_table as dt
+from dash.dependencies import Input, Output
 import dash_core_components as dcc
 import dash_html_components as html
-import dash_table as dt
-import datetime
-
 import pandas as pd
 
 import xlrd
-# import csv
-# def csv_from_excel():
-#     wb = xlrd.open_workbook('excel.xlsx')
-#     sh = wb.sheet_by_name('all_combined')
-#     a1 = sh.cell_value(rowx=0, colx=0)
-#     a1_as_datetime = datetime.datetime(*xlrd.xldate_as_tuple(a1, wb.datemode))
-#     print('datetime: %s' % a1_as_datetime)
-#     your_csv_file = open('all.csv', 'w')
-#     wr = csv.writer(your_csv_file, quoting=csv.QUOTE_ALL)
-#
-#     for rownum in range(sh.nrows):
-#         wr.writerow(sh.row_values(rownum))
-#
-#     your_csv_file.close()
-#
-# # runs the csv_from_excel function:
-# csv_from_excel()
 
+df = pd.read_csv(
+    ('https://raw.githubusercontent.com/plotly/'
+     'datasets/master/1962_2006_walmart_store_openings.csv'),
+    parse_dates=[1, 2],
+    infer_datetime_format=True
+)
+future_indices = df['OPENDATE'] > datetime.datetime(year=2050,month=1,day=1)
+df.loc[future_indices, 'OPENDATE'] -= datetime.timedelta(days=365.25*100)
 
-df = pd.read_csv('run_all.csv')
-data_df = df[['date', 'type', 'rep-num', 'rep-len', 'pace', 'hr', 'temp']]
+run_df = pd.read_csv('run_all.csv')
+data_df = run_df[['date', 'type', 'rep-num', 'rep-len', 'pace', 'hr', 'temp']]
 print(data_df)
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+
+
+app.scripts.config.serve_locally = True
+app.css.config.serve_locally = True
+
+styles = {
+    'pre': {
+        'border': 'thin lightgrey solid',
+        'overflowX': 'scroll'
+    }
+}
 
 app.layout = html.Div(children=[
     html.H1(children='Running Analysis'),
@@ -39,13 +43,114 @@ app.layout = html.Div(children=[
     html.Div(children='''
         EMTIR
     '''),
-
-    dt.DataTable(
+    html.Div([    
+        dt.DataTable(
         id='table',
+        editable=True,
+        filter_action="native",
+        sort_action="native",
+        sort_mode='multi',
+        row_selectable='multi',
         columns=[{"name": i, "id": i} for i in data_df.columns],
         data=data_df.to_dict('records'),
-    )
+        style_table={
+            'maxHeight': '600px',
+            'overflowY': 'scroll',
+            'border': 'thin lightgrey solid',
+        },
+        )], className="four columns"
+    ),
+    html.Div([
+    dcc.Graph(
+        id='basic-interactions',
+        figure={
+            'data': [
+                {
+                    'x': df['OPENDATE'],
+                    'text': df['STRCITY'],
+                    'customdata': df['storenum'],
+                    'name': 'Open Date',
+                    'type': 'histogram'
+                },
+                {
+                    'x': df['date_super'],
+                    'text': df['STRCITY'],
+                    'customdata': df['storenum'],
+                    'name': 'Super Date',
+                    'type': 'histogram'
+                }
+            ],
+            'layout': {}
+        }
+    ),
+
+    html.Div(className='row', children=[
+        html.Div([
+            dcc.Markdown(d("""
+                **Hover Data**
+                Mouse over values in the graph.
+            """)),
+            html.Pre(id='hover-data', style=styles['pre'])
+        ], className='three columns'),
+
+        html.Div([
+            dcc.Markdown(d("""
+                **Click Data**
+                Click on points in the graph.
+            """)),
+            html.Pre(id='click-data', style=styles['pre']),
+        ], className='three columns'),
+
+        html.Div([
+            dcc.Markdown(d("""
+                **Selection Data**
+                Choose the lasso or rectangle tool in the graph's menu
+                bar and then select points in the graph.
+            """)),
+            html.Pre(id='selected-data', style=styles['pre']),
+        ], className='three columns'),
+
+        html.Div([
+            dcc.Markdown(d("""
+                **Zoom and Relayout Data**
+                Click and drag on the graph to zoom or click on the zoom
+                buttons in the graph's menu bar.
+                Clicking on legend items will also fire
+                this event.
+            """)),
+            html.Pre(id='relayout-data', style=styles['pre']),
+        ], className='three columns')
+    ])
 ])
+])
+
+@app.callback(
+    Output('hover-data', 'children'),
+    [Input('basic-interactions', 'hoverData')])
+def display_hover_data(hoverData):
+    return json.dumps(hoverData, indent=2)
+
+
+@app.callback(
+    Output('click-data', 'children'),
+    [Input('basic-interactions', 'clickData')])
+def display_click_data(clickData):
+    return json.dumps(clickData, indent=2)
+
+
+@app.callback(
+    Output('selected-data', 'children'),
+    [Input('basic-interactions', 'selectedData')])
+def display_selected_data(selectedData):
+    return json.dumps(selectedData, indent=2)
+
+
+@app.callback(
+    Output('relayout-data', 'children'),
+    [Input('basic-interactions', 'relayoutData')])
+def display_selected_data(relayoutData):
+    return json.dumps(relayoutData, indent=2)
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
