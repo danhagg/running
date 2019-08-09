@@ -1,0 +1,56 @@
+A mathematical analysis of Daniels tables -- do simple formulas exist?
+
+A close look at the tables suggests a couple of things:
+1) How big are rounding errors in the table? For example, I calculate, using Daniel's exact equations, the mile time for a VDOT of 30 as 9:10.37, or 9:10, but the table indicates 9:11.
+2) Have the values been manually adjusted later? Creating formulas and comparing them highlights some ranges are not always "smooth". This site http://www.attackpoint.org/trainingpaces.jsp notes that "Note that the new E/L paces are slightly slower than recommended in previous editions."
+
+Nevertheless, here are some formulas that come reasonably close.
+
+Daniel's/Gilbert's formulas for determining VDOT: The equations for converting a race performance to a VDOT is well documented in Daniels/Gilbert's Oxygen Power. Given a race time T, and a race distance DIST:
+PERCENT_MAX = 0.8 + 0.1894393 * EXP(-0.012778 * T*1440) + 0.2989558 * EXP(-0.1932605 * T*1440)
+VO2 = -4.6 + 0.182258 * (DIST/T/1440) + 0.000104 * (DIST/T/1440)^2
+vDOT = VO2 / PERCENT_MAX
+
+Note that multiplying and dividing times by 1440 allow to enter and display times in Excel's "hh:mm" format.
+
+Assuming some target paces are at a fixed percentage of VDOT, we can substitute PERCENT_MAX, and solve the equations for T, yielding a general Excel formula, based on DIST, VDOT, and PERCENT_MAX:
+
+TARGET =(DIST*2*0.000104)/(-0.182258+SQRT(0.182258^2-4*0.000104*(-4.6-PERCENT_MAX*VDOT)))/1440 
+
+Note that dividing times by 1440 allows us to display the times with a more user-friendly "hh:mm" time format.
+
+E-Pace: PERCENT_MAX = 67.0%
+
+TARGET =(DIST*2*0.000104)/(-0.182258+SQRT(0.182258^2-4*0.000104*(-4.6-0.67*VDOT)))/1440
+
+Note this seems to fit well for VDOTS 36-85, but for VDOTS 30-35 the table times are a couple seconds faster, up to 67.5% for a VDOT of 30.
+
+M-Pace: PERCENT_MAX = ~82%
+
+M Pace is harder to calculate, in a single formula, as the PERCENT_MAX is not fixed across all VDOTS. While 82% yields reasonably close values, in fact, they range from 80.74%, for a VDOT of 30, to 84.27%, for a VDOT of 85. Re-arranging the equations above, and solving for T, doesn't seem straightforward. It's easier to write a script, or a program which implements an iterative search for the marathon pace.
+
+T-Pace: PERCENT_MAX = 88.0%
+
+TARGET =(DIST*2*0.000104)/(-0.182258+SQRT(0.182258^2-4*0.000104*(-4.6-0.88*VDOT)))/1440
+
+I-Pace: PERCENT_MAX = 97.5%
+
+TARGET =(DIST*2*0.000104)/(-0.182258+SQRT(0.182258^2-4*0.000104*(-4.6-0.975*VDOT)))/1440
+
+R-Pace: PERCENT_MAX = ~120%
+
+Like M-Pace, R-Pace is not fixed to a single PERCENT_MAX, but more likely, something like "mile" pace, requiring another iterative solution. In fact here: http://www.coacheseducation.co...aug-00.htm he says that R-PACE should be specific to your event. That is a VDOT 60 miler, and a VDOT 60 marathoner should have different R-Pace targets.
+
+Assuming that 3K pace is the "fastest" aerobic pace, I did a simple curve fitting exercise, which produces reasonably close times.
+
+200m target: 92.95% of the time to run 200m at 3K race pace
+400m target: 94.50% of the time to run 400m at 3K race pace
+800m target: 95.28% of the time to run 800m at 3K race pace
+
+Note the values fit the table reasonably well, but some table ranges seem to me not to be smooth. For example my formula for 800m for VDOT 72 is off by 2 seconds. Maybe it's my formula, but the table progression doesn't seem quite right to me.
+
+More notes:
+Given that the tables can be off by at least 1 second (see first point at top), and in most cases 1 or 2 seconds doesn't matter much anyway, as targets may have to be customized for individual athletes anyway, these formulas seem reasonably close.
+You can use Excel formatting for times: "[m]:ss", or "[s]", to "mimic" the table. In this case, times can be converted back and forth by multiplying and dividing by 1440.
+I-Pace is limited to 5:00 or below
+R-Pace is limited to 2:30 or below
