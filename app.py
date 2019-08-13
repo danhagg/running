@@ -1,156 +1,171 @@
-import json
-import datetime
-from textwrap import dedent as d
 import dash
-import dash_table as dt
-from dash.dependencies import Input, Output
 import dash_core_components as dcc
 import dash_html_components as html
 import pandas as pd
+import plotly.graph_objs as go
 
-import xlrd
-
-df = pd.read_csv(
-    ('https://raw.githubusercontent.com/plotly/'
-     'datasets/master/1962_2006_walmart_store_openings.csv'),
-    parse_dates=[1, 2],
-    infer_datetime_format=True
-)
-future_indices = df['OPENDATE'] > datetime.datetime(year=2050,month=1,day=1)
-df.loc[future_indices, 'OPENDATE'] -= datetime.timedelta(days=365.25*100)
-
-run_df = pd.read_csv('run_all.csv')
-data_df = run_df[['date', 'type', 'rep-num', 'rep-len', 'pace', 'hr', 'temp']]
-print(data_df)
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
+run_df = pd.read_csv('mara_csv.csv')
+data = run_df[['date', 'type', 'rep-num', 'rep-len', 'pace', 'hr', 'temp']]
 
-app.scripts.config.serve_locally = True
-app.css.config.serve_locally = True
+df = pd.read_csv(
+    'https://gist.githubusercontent.com/chriddyp/'
+    'cb5392c35661370d95f300086accea51/raw/'
+    '8e0768211f6b747c0db42a9ce9a0937dafcbd8b2/'
+    'indicators.csv')
 
-styles = {
-    'pre': {
-        'border': 'thin lightgrey solid',
-        'overflowX': 'scroll'
-    }
-}
+available_indicators = df['Indicator Name'].unique()
 
-app.layout = html.Div(children=[
-    html.H1(children='Running Analysis'),
-
-    html.Div(children='''
-        EMTIR
-    '''),
-    html.Div([    
-        dt.DataTable(
-        id='table',
-        editable=True,
-        filter_action="native",
-        sort_action="native",
-        sort_mode='multi',
-        row_selectable='multi',
-        columns=[{"name": i, "id": i} for i in data_df.columns],
-        data=data_df.to_dict('records'),
-        style_table={
-            'maxHeight': '600px',
-            'overflowY': 'scroll',
-            'border': 'thin lightgrey solid',
-        },
-        )], className="four columns"
-    ),
+app.layout = html.Div([
     html.Div([
-    dcc.Graph(
-        id='basic-interactions',
-        figure={
-            'data': [
-                {
-                    'x': df['OPENDATE'],
-                    'text': df['STRCITY'],
-                    'customdata': df['storenum'],
-                    'name': 'Open Date',
-                    'type': 'histogram'
-                },
-                {
-                    'x': df['date_super'],
-                    'text': df['STRCITY'],
-                    'customdata': df['storenum'],
-                    'name': 'Super Date',
-                    'type': 'histogram'
-                }
-            ],
-            'layout': {}
+
+        html.Div([
+            dcc.Dropdown(
+                id='crossfilter-xaxis-column',
+                options=[{'label': i, 'value': i} for i in available_indicators],
+                value='Fertility rate, total (births per woman)'
+            ),
+            dcc.RadioItems(
+                id='crossfilter-xaxis-type',
+                options=[{'label': i, 'value': i} for i in ['Linear', 'Log']],
+                value='Linear',
+                labelStyle={'display': 'inline-block'}
+            )
+        ],
+        style={'width': '49%', 'display': 'inline-block'}),
+
+        html.Div([
+            dcc.Dropdown(
+                id='crossfilter-yaxis-column',
+                options=[{'label': i, 'value': i} for i in available_indicators],
+                value='Life expectancy at birth, total (years)'
+            ),
+            dcc.RadioItems(
+                id='crossfilter-yaxis-type',
+                options=[{'label': i, 'value': i} for i in ['Linear', 'Log']],
+                value='Linear',
+                labelStyle={'display': 'inline-block'}
+            )
+        ], style={'width': '49%', 'float': 'right', 'display': 'inline-block'})
+    ], style={
+        'borderBottom': 'thin lightgrey solid',
+        'backgroundColor': 'rgb(250, 250, 250)',
+        'padding': '10px 5px'
+    }),
+
+    html.Div([
+        dcc.Graph(
+            id='crossfilter-indicator-scatter',
+            hoverData={'points': [{'customdata': 'Japan'}]}
+        )
+    ], style={'width': '49%', 'display': 'inline-block', 'padding': '0 20'}),
+    html.Div([
+        dcc.Graph(id='x-time-series'),
+        dcc.Graph(id='y-time-series'),
+    ], style={'display': 'inline-block', 'width': '49%'}),
+
+    html.Div(dcc.Slider(
+        id='crossfilter-year--slider',
+        min=df['Year'].min(),
+        max=df['Year'].max(),
+        value=df['Year'].max(),
+        marks={str(year): str(year) for year in df['Year'].unique()}
+    ), style={'width': '49%', 'padding': '0px 20px 20px 20px'})
+])
+
+
+@app.callback(
+    dash.dependencies.Output('crossfilter-indicator-scatter', 'figure'),
+    [dash.dependencies.Input('crossfilter-xaxis-column', 'value'),
+     dash.dependencies.Input('crossfilter-yaxis-column', 'value'),
+     dash.dependencies.Input('crossfilter-xaxis-type', 'value'),
+     dash.dependencies.Input('crossfilter-yaxis-type', 'value'),
+     dash.dependencies.Input('crossfilter-year--slider', 'value')])
+def update_graph(xaxis_column_name, yaxis_column_name,
+                 xaxis_type, yaxis_type,
+                 year_value):
+    dff = df[df['Year'] == year_value]
+
+    return {
+        'data': [go.Scatter(
+            x=dff[dff['Indicator Name'] == xaxis_column_name]['Value'],
+            y=dff[dff['Indicator Name'] == yaxis_column_name]['Value'],
+            text=dff[dff['Indicator Name'] == yaxis_column_name]['Country Name'],
+            customdata=dff[dff['Indicator Name'] == yaxis_column_name]['Country Name'],
+            mode='markers',
+            marker={
+                'size': 15,
+                'opacity': 0.5,
+                'line': {'width': 0.5, 'color': 'white'}
+            }
+        )],
+        'layout': go.Layout(
+            xaxis={
+                'title': xaxis_column_name,
+                'type': 'linear' if xaxis_type == 'Linear' else 'log'
+            },
+            yaxis={
+                'title': yaxis_column_name,
+                'type': 'linear' if yaxis_type == 'Linear' else 'log'
+            },
+            margin={'l': 40, 'b': 30, 't': 10, 'r': 0},
+            height=450,
+            hovermode='closest'
+        )
+    }
+
+
+def create_time_series(dff, axis_type, title):
+    return {
+        'data': [go.Scatter(
+            x=dff['Year'],
+            y=dff['Value'],
+            mode='lines+markers'
+        )],
+        'layout': {
+            'height': 225,
+            'margin': {'l': 20, 'b': 30, 'r': 10, 't': 10},
+            'annotations': [{
+                'x': 0, 'y': 0.85, 'xanchor': 'left', 'yanchor': 'bottom',
+                'xref': 'paper', 'yref': 'paper', 'showarrow': False,
+                'align': 'left', 'bgcolor': 'rgba(255, 255, 255, 0.5)',
+                'text': title
+            }],
+            'yaxis': {'type': 'linear' if axis_type == 'Linear' else 'log'},
+            'xaxis': {'showgrid': False}
         }
-    ),
-
-    html.Div(className='row', children=[
-        html.Div([
-            dcc.Markdown(d("""
-                **Hover Data**
-                Mouse over values in the graph.
-            """)),
-            html.Pre(id='hover-data', style=styles['pre'])
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown(d("""
-                **Click Data**
-                Click on points in the graph.
-            """)),
-            html.Pre(id='click-data', style=styles['pre']),
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown(d("""
-                **Selection Data**
-                Choose the lasso or rectangle tool in the graph's menu
-                bar and then select points in the graph.
-            """)),
-            html.Pre(id='selected-data', style=styles['pre']),
-        ], className='three columns'),
-
-        html.Div([
-            dcc.Markdown(d("""
-                **Zoom and Relayout Data**
-                Click and drag on the graph to zoom or click on the zoom
-                buttons in the graph's menu bar.
-                Clicking on legend items will also fire
-                this event.
-            """)),
-            html.Pre(id='relayout-data', style=styles['pre']),
-        ], className='three columns')
-    ])
-])
-])
-
-@app.callback(
-    Output('hover-data', 'children'),
-    [Input('basic-interactions', 'hoverData')])
-def display_hover_data(hoverData):
-    return json.dumps(hoverData, indent=2)
+    }
 
 
 @app.callback(
-    Output('click-data', 'children'),
-    [Input('basic-interactions', 'clickData')])
-def display_click_data(clickData):
-    return json.dumps(clickData, indent=2)
+    dash.dependencies.Output('x-time-series', 'figure'),
+    [dash.dependencies.Input('crossfilter-indicator-scatter', 'hoverData'),
+     dash.dependencies.Input('crossfilter-xaxis-column', 'value'),
+     dash.dependencies.Input('crossfilter-xaxis-type', 'value')])
+def update_y_timeseries(hoverData, xaxis_column_name, axis_type):
+    country_name = hoverData['points'][0]['customdata']
+    dff = df[df['Country Name'] == country_name]
+    dff = dff[dff['Indicator Name'] == xaxis_column_name]
+    title = '<b>{}</b><br>{}'.format(country_name, xaxis_column_name)
+    return create_time_series(dff, axis_type, title)
 
 
 @app.callback(
-    Output('selected-data', 'children'),
-    [Input('basic-interactions', 'selectedData')])
-def display_selected_data(selectedData):
-    return json.dumps(selectedData, indent=2)
-
-
-@app.callback(
-    Output('relayout-data', 'children'),
-    [Input('basic-interactions', 'relayoutData')])
-def display_selected_data(relayoutData):
-    return json.dumps(relayoutData, indent=2)
+    dash.dependencies.Output('y-time-series', 'figure'),
+    [dash.dependencies.Input('crossfilter-indicator-scatter', 'hoverData'),
+     dash.dependencies.Input('crossfilter-yaxis-column', 'value'),
+     dash.dependencies.Input('crossfilter-yaxis-type', 'value')])
+def update_x_timeseries(hoverData, yaxis_column_name, axis_type):
+    dff = df[df['Country Name'] == hoverData['points'][0]['customdata']]
+    dff = dff[dff['Indicator Name'] == yaxis_column_name]
+    return create_time_series(dff, axis_type, yaxis_column_name)
 
 
 if __name__ == '__main__':
     app.run_server(debug=True)
+
+# https://dash.plot.ly/interactive-graphing
+
